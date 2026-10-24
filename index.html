@@ -14,7 +14,7 @@
 <h2 id="menu">Nosso cardápio</h2><div class="products" id="products"></div>
 <div class="notice">Demonstração inicial. Antes de divulgar a loja, configure o número correto do WhatsApp, os produtos, preços e fotos. Login Google/Apple e administração segura precisam de autenticação e banco de dados no servidor.</div>
 </main><footer>♛ IMPERIUM AÇAÍ · Sabor que marca presença</footer>
-<dialog id="access"><h2>Bem-vindo à Imperium</h2><p>Escolha como deseja continuar.</p><div class="actions"><button class="btn" onclick="alert('O login Google precisa ser configurado com um provedor de autenticação.')">Continuar com Google</button><button class="btn secondary" onclick="alert('O login Apple precisa ser configurado com um provedor de autenticação.')">Continuar com Apple</button></div><p style="color:var(--muted);font-size:.85rem">Estes botões são demonstrativos. O acesso de administrador deve ser validado no servidor.</p><button class="btn secondary" onclick="this.closest('dialog').close()">Fechar</button></dialog>
+<dialog id="access"><h2>Bem-vindo à Imperium</h2><p>Entre com sua conta Google para continuar.</p><div id="authStatus" role="status" aria-live="polite" style="color:var(--muted);margin:12px 0">Você ainda não entrou.</div><div class="actions"><button class="btn" id="googleLogin">Continuar com Google</button><button class="btn secondary" id="googleLogout" hidden>Sair da conta</button></div><p style="color:var(--muted);font-size:.85rem">O login identifica sua conta. Ele não concede acesso administrativo automaticamente.</p><button class="btn secondary" onclick="this.closest('dialog').close()">Fechar</button></dialog>
 <dialog id="cart"><h2>Sua sacola</h2><div id="cartitems"></div><div class="line"><b>Total</b><strong class="price" id="total">R$ 0,00</strong></div><label>Seu nome</label><input id="customer" placeholder="Nome para o pedido"><label>Entrega ou retirada</label><select id="delivery"><option>Retirada no local</option><option>Entrega</option></select><label>Observações / endereço</label><textarea id="notes" placeholder="Informe complementos ou endereço"></textarea><button class="btn" onclick="checkout()">Finalizar pelo WhatsApp</button> <button class="btn secondary" onclick="document.querySelector('#cart').close()">Continuar comprando</button></dialog>
 <script>
 const WHATSAPP_NUMBER='55DDDNUMEROAQUI'; // Troque pelo número completo com DDI e DDD, somente números.
@@ -32,4 +32,69 @@ function removeItem(id){const p=cart.find(x=>x.id===id);if(p){p.qty--;if(p.qty<=
 function openCart(){updateCart();document.querySelector('#cart').showModal()}
 function checkout(){if(!cart.length){alert('Adicione pelo menos um produto à sacola.');return}if(WHATSAPP_NUMBER.includes('DDDNUMERO')){alert('Configure WHATSAPP_NUMBER no arquivo index.html com o número da loja antes de receber pedidos.');return}const name=document.querySelector('#customer').value.trim();const delivery=document.querySelector('#delivery').value;const notes=document.querySelector('#notes').value.trim();let msg='Olá! Quero fazer um pedido na Imperium Açaí.\n';if(name)msg+='Nome: '+name+'\n';msg+='Modalidade: '+delivery+'\n\n';cart.forEach(p=>msg+=p.name+' x'+p.qty+' — '+money(p.price*p.qty)+'\n');msg+='\nTotal: '+money(cart.reduce((n,p)=>n+p.price*p.qty,0));if(notes)msg+='\nObservações/endereço: '+notes;window.open('https://wa.me/'+WHATSAPP_NUMBER+'?text='+encodeURIComponent(msg),'_blank')}
 renderProducts();updateCart();
-</script></body></html>
+</script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-auth.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyApyJfJJBnOs5xO-DGQJD5babT9qHYSnHM",
+  authDomain: "imperium-acai.firebaseapp.com",
+  projectId: "imperium-acai",
+  storageBucket: "imperium-acai.firebasestorage.app",
+  messagingSenderId: "404088871537",
+  appId: "1:404088871537:web:e28bceed58055bb5bc19d0",
+  measurementId: "G-CSSKB60G89"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const provider = new GoogleAuthProvider();
+provider.setCustomParameters({ prompt: "select_account" });
+
+const loginButton = document.getElementById("googleLogin");
+const logoutButton = document.getElementById("googleLogout");
+const statusBox = document.getElementById("authStatus");
+
+loginButton.addEventListener("click", async () => {
+  loginButton.disabled = true;
+  statusBox.textContent = "Abrindo o login do Google...";
+  try {
+    await signInWithPopup(auth, provider);
+  } catch (error) {
+    console.error("Erro no login Google:", error);
+    const messages = {
+      "auth/popup-closed-by-user": "A janela de login foi fechada antes de concluir.",
+      "auth/popup-blocked": "O navegador bloqueou a janela. Permita pop-ups e tente novamente.",
+      "auth/unauthorized-domain": "Este domínio ainda não está autorizado nas configurações do Firebase Authentication.",
+      "auth/operation-not-allowed": "O provedor Google não está ativado no Firebase Authentication."
+    };
+    statusBox.textContent = messages[error.code] || "Não foi possível entrar. Tente novamente e confira o console se o erro continuar.";
+  } finally {
+    loginButton.disabled = false;
+  }
+});
+
+logoutButton.addEventListener("click", async () => {
+  try {
+    await signOut(auth);
+  } catch (error) {
+    console.error("Erro ao sair:", error);
+    statusBox.textContent = "Não foi possível sair da conta. Tente novamente.";
+  }
+});
+
+onAuthStateChanged(auth, (user) => {
+  if (user) {
+    statusBox.textContent = "Conectado como " + (user.displayName || user.email || "usuário Google") + ".";
+    loginButton.hidden = true;
+    logoutButton.hidden = false;
+  } else {
+    statusBox.textContent = "Você ainda não entrou.";
+    loginButton.hidden = false;
+    logoutButton.hidden = true;
+  }
+});
+</script>
+
+</body></html>
