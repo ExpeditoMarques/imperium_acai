@@ -14,7 +14,7 @@
 <h2 id="menu">Nosso cardápio</h2><div class="products" id="products"></div>
 <div class="notice">Demonstração inicial. Antes de divulgar a loja, configure o número correto do WhatsApp, os produtos, preços e fotos. Login Google/Apple e administração segura precisam de autenticação e banco de dados no servidor.</div>
 </main><footer>♛ IMPERIUM AÇAÍ · Sabor que marca presença</footer>
-<dialog id="access"><h2>Bem-vindo à Imperium</h2><p>Entre com sua conta Google para continuar.</p><div id="authStatus" role="status" aria-live="polite" style="color:var(--muted);margin:12px 0">Você ainda não entrou.</div><div class="actions"><button class="btn" id="googleLogin">Continuar com Google</button><button class="btn secondary" id="googleLogout" hidden>Sair da conta</button></div><p style="color:var(--muted);font-size:.85rem">O login identifica sua conta. Ele não concede acesso administrativo automaticamente.</p><button class="btn secondary" onclick="this.closest('dialog').close()">Fechar</button></dialog>
+<dialog id="access"><h2>👑 Minha conta Imperium</h2><p>Entre com sua conta Google para acessar seu perfil.</p><div id="authStatus" role="status" aria-live="polite" style="color:var(--muted);margin:12px 0">Você ainda não entrou.</div><div class="actions"><button class="btn" id="googleLogin">Continuar com Google</button><button class="btn secondary" id="googleLogout" hidden>Sair da conta</button></div><section id="profileArea" hidden style="margin-top:18px;border-top:1px solid #ffffff25;padding-top:14px"><h3>👤 Seu perfil</h3><p id="profileName" style="color:var(--muted)"></p><p id="roleBadge" style="color:var(--gold);font-weight:800">🛍️ Cliente</p><label for="adminKey">🔑 Chave de acesso administrativo</label><input id="adminKey" type="password" autocomplete="off" placeholder="Digite a chave de acesso"><button class="btn" id="requestAdmin">Validar chave</button><p id="adminKeyStatus" role="status" aria-live="polite" style="color:var(--muted)"></p><p style="color:var(--muted);font-size:.85rem">A chave é validada no servidor Firebase, não neste navegador. Nunca compartilhe sua chave.</p></section><button class="btn secondary" onclick="this.closest('dialog').close()" style="margin-top:12px">Fechar</button></dialog>
 <dialog id="cart"><h2>Sua sacola</h2><div id="cartitems"></div><div class="line"><b>Total</b><strong class="price" id="total">R$ 0,00</strong></div><label>Seu nome</label><input id="customer" placeholder="Nome para o pedido"><label>Entrega ou retirada</label><select id="delivery"><option>Retirada no local</option><option>Entrega</option></select><label>Observações / endereço</label><textarea id="notes" placeholder="Informe complementos ou endereço"></textarea><button class="btn" onclick="checkout()">Finalizar pelo WhatsApp</button> <button class="btn secondary" onclick="document.querySelector('#cart').close()">Continuar comprando</button></dialog>
 <script>
 const WHATSAPP_NUMBER='55DDDNUMEROAQUI'; // Troque pelo número completo com DDI e DDD, somente números.
@@ -35,7 +35,8 @@ renderProducts();updateCart();
 </script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-app.js";
-import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-auth.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut, getIdTokenResult } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-auth.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-functions.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyApyJfJJBnOs5xO-DGQJD5babT9qHYSnHM",
@@ -49,12 +50,20 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const functions = getFunctions(app, "us-central1");
+const redeemAdminKey = httpsCallable(functions, "redeemAdminKey");
 const provider = new GoogleAuthProvider();
 provider.setCustomParameters({ prompt: "select_account" });
 
 const loginButton = document.getElementById("googleLogin");
 const logoutButton = document.getElementById("googleLogout");
 const statusBox = document.getElementById("authStatus");
+const profileArea = document.getElementById("profileArea");
+const profileName = document.getElementById("profileName");
+const roleBadge = document.getElementById("roleBadge");
+const adminKey = document.getElementById("adminKey");
+const requestAdmin = document.getElementById("requestAdmin");
+const adminKeyStatus = document.getElementById("adminKeyStatus");
 
 loginButton.addEventListener("click", async () => {
   loginButton.disabled = true;
@@ -75,6 +84,40 @@ loginButton.addEventListener("click", async () => {
   }
 });
 
+
+requestAdmin.addEventListener("click", async () => {
+  const key = adminKey.value.trim();
+  if (!auth.currentUser) {
+    adminKeyStatus.textContent = "Entre com sua conta Google primeiro.";
+    return;
+  }
+  if (!key) {
+    adminKeyStatus.textContent = "Digite a chave administrativa.";
+    return;
+  }
+  requestAdmin.disabled = true;
+  adminKeyStatus.textContent = "Validando a chave com segurança no Firebase...";
+  try {
+    const result = await redeemAdminKey({ key });
+    await auth.currentUser.getIdToken(true);
+    const token = await getIdTokenResult(auth.currentUser, true);
+    roleBadge.textContent = token.claims.admin ? "👑 Administrador" : "🛍️ Cliente";
+    adminKeyStatus.textContent = result.data.message || "Acesso administrativo liberado.";
+    adminKey.value = "";
+  } catch (error) {
+    console.error("Erro ao validar chave administrativa:", error);
+    const messages = {
+      "functions/unauthenticated": "Entre com sua conta Google antes de validar a chave.",
+      "functions/invalid-argument": "Digite uma chave válida.",
+      "functions/permission-denied": "Chave incorreta ou acesso negado.",
+      "functions/not-found": "A função ainda não foi publicada no Firebase. Siga as etapas de implantação."
+    };
+    adminKeyStatus.textContent = messages[error.code] || "Não foi possível validar. Confira se a função Firebase foi implantada e tente novamente.";
+  } finally {
+    requestAdmin.disabled = false;
+  }
+});
+
 logoutButton.addEventListener("click", async () => {
   try {
     await signOut(auth);
@@ -86,11 +129,19 @@ logoutButton.addEventListener("click", async () => {
 
 onAuthStateChanged(auth, (user) => {
   if (user) {
-    statusBox.textContent = "Conectado como " + (user.displayName || user.email || "usuário Google") + ".";
+    statusBox.textContent = "Conectado com segurança.";
+    profileName.textContent = (user.displayName || "Cliente") + (user.email ? " · " + user.email : "");
+    profileArea.hidden = false;
     loginButton.hidden = true;
     logoutButton.hidden = false;
+    getIdTokenResult(user, true).then(token => { roleBadge.textContent = token.claims.admin ? "👑 Administrador" : "🛍️ Cliente"; }).catch(() => { roleBadge.textContent = "🛍️ Cliente"; });
   } else {
     statusBox.textContent = "Você ainda não entrou.";
+    profileArea.hidden = true;
+    profileName.textContent = "";
+    roleBadge.textContent = "🛍️ Cliente";
+    adminKeyStatus.textContent = "";
+    adminKey.value = "";
     loginButton.hidden = false;
     logoutButton.hidden = true;
   }
